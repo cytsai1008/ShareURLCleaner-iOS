@@ -1,7 +1,7 @@
 import BackgroundTasks
 import Foundation
 
-/// Daily background refresh of the filter list via BGTaskScheduler.
+/// Daily background refresh of the filter lists via BGTaskScheduler.
 /// Mirrors the Android app's daily WorkManager job, gated on the auto-update toggle.
 enum BackgroundRefresh {
 
@@ -30,7 +30,7 @@ enum BackgroundRefresh {
 
         let work = Task {
             do {
-                try await FilterDownloader.update(from: Settings.filterURL)
+                try await FilterDownloader.update(from: Settings.enabledFilterURLs)
                 task.setTaskCompleted(success: true)
             } catch {
                 task.setTaskCompleted(success: false)

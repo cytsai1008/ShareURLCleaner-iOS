@@ -12,7 +12,11 @@ enum UrlCleaner {
 
         var paramsToRemove = Set<String>()
         for rule in rules {
-            if rule.domain == nil || host == rule.domain || host.hasSuffix(".\(rule.domain!)") {
+            guard let domains = rule.domains else {
+                paramsToRemove.insert(rule.param.lowercased())
+                continue
+            }
+            if domains.contains(where: { hostMatches(host, $0) }) {
                 paramsToRemove.insert(rule.param.lowercased())
             }
         }
@@ -24,5 +28,17 @@ enum UrlCleaner {
 
         components.queryItems = kept.isEmpty ? nil : kept
         return components.string ?? rawUrl
+    }
+
+    /// Whether `host` falls under a rule's `domain=` entry, including AdGuard's TLD wildcard
+    /// (`shopee.*` — the same brand on every country domain). Over 100 rules in the shipped
+    /// lists are written that way, and all of them used to match nothing.
+    private static func hostMatches(_ host: String, _ domain: String) -> Bool {
+        if domain.hasSuffix(".*") {
+            // "shopee." — matches shopee.tw and s.shopee.tw, not myshopee.tw.
+            let base = String(domain.dropLast())
+            return host.hasPrefix(base) || host.contains(".\(base)")
+        }
+        return host == domain || host.hasSuffix(".\(domain)")
     }
 }

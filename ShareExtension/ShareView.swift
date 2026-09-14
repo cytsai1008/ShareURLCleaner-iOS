@@ -1,55 +1,92 @@
 import SwiftUI
 import UIKit
+import Observation
+
+/// What the share sheet shows. Filled in twice: once immediately with the raw input, then
+/// again when cleaning (and any redirect following) finishes.
+@MainActor
+@Observable
+final class ShareState {
+    let original: String
+    var cleaned: String
+    var changed = false
+    var noRules: Bool
+    var resolving: Bool
+    var fetchFailed = false
+
+    init(original: String, cleaned: String, noRules: Bool, resolving: Bool) {
+        self.original = original
+        self.cleaned = cleaned
+        self.noRules = noRules
+        self.resolving = resolving
+    }
+}
 
 struct ShareView: View {
-    let original: String
-    let cleaned: String
-    let changed: Bool
-    let noRules: Bool
-    let onShare: () -> Void
+    @Bindable var state: ShareState
+    let onShare: (String) -> Void
     let onDone: () -> Void
 
     var body: some View {
         NavigationStack {
             Form {
-                if noRules {
-                    Section {
-                        Label("No filter rules saved yet. Open URL Cleaner and tap Update Now to download them.",
-                              systemImage: "exclamationmark.triangle.fill")
-                            .font(.callout)
-                            .foregroundStyle(.orange)
-                    }
+                if state.noRules {
+                    notice("No filter rules saved yet. Open URL Cleaner and tap Update Now to download them.")
+                } else if state.fetchFailed {
+                    notice("Couldn't follow the redirect — sharing the link as-is.")
                 }
+
                 Section("Cleaned URL") {
-                    Text(cleaned).font(.callout).textSelection(.enabled)
+                    if state.resolving {
+                        HStack {
+                            ProgressView()
+                            Text("Following redirect…").foregroundStyle(.secondary)
+                        }
+                        .font(.callout)
+                    }
+                    Text(state.cleaned).font(.callout).textSelection(.enabled)
                 }
-                if changed {
+                if state.changed {
                     Section("Original") {
-                        Text(original).font(.callout).foregroundStyle(.secondary)
+                        Text(state.original).font(.callout).foregroundStyle(.secondary)
                     }
                 }
 
                 Section {
                     Button {
-                        UIPasteboard.general.string = cleaned
+                        UIPasteboard.general.string = state.cleaned
                         onDone()
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
                     }
                     Button {
-                        onShare()
+                        onShare(state.cleaned)
                     } label: {
                         Label("Share…", systemImage: "square.and.arrow.up")
                     }
                 }
+                .disabled(state.resolving)
             }
-            .navigationTitle(changed ? "URL Cleaned" : "Nothing to Clean")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done", action: onDone)
                 }
             }
+        }
+    }
+
+    private var title: String {
+        if state.resolving { return "Cleaning…" }
+        return state.changed ? "URL Cleaned" : "Nothing to Clean"
+    }
+
+    private func notice(_ text: String) -> some View {
+        Section {
+            Label(text, systemImage: "exclamationmark.triangle.fill")
+                .font(.callout)
+                .foregroundStyle(.orange)
         }
     }
 }

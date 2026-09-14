@@ -15,14 +15,35 @@ final class ShareViewController: UIViewController {
     private func loadAndPresent() async {
         let input = await extractInput() ?? ""
         let rules = FilterStore.loadRules()
-        let result = ShareTextCleaner.cleanFirstUrl(input, rules: rules)
 
+        // Aggressive mode makes a network call, so the UI goes up first with a "resolving…"
+        // state rather than leaving the sheet blank for the length of a redirect chain.
+        let resolving = ShareTextCleaner.hasUrl(input)
+            && RedirectResolver.forMode(Settings.aggressiveMode,
+                                        domains: Settings.parseDomains(Settings.aggressiveDomains)) != nil
+        let state = ShareState(original: input, cleaned: input, noRules: rules.isEmpty,
+                               resolving: resolving)
+        present(state)
+
+        let fetchFailed = FetchFlag()
+        let resolve = RedirectResolver.forMode(
+            Settings.aggressiveMode,
+            domains: Settings.parseDomains(Settings.aggressiveDomains),
+            onFailure: { fetchFailed.set() },
+            clean: { UrlCleaner.clean($0, rules: rules) }
+        )
+        let result = await ShareTextCleaner.cleanUrls(input, rules: rules, resolve: resolve)
+
+        state.cleaned = result.text
+        state.changed = result.cleaned
+        state.fetchFailed = fetchFailed.value
+        state.resolving = false
+    }
+
+    private func present(_ state: ShareState) {
         let view = ShareView(
-            original: input,
-            cleaned: result.text,
-            changed: result.cleaned,
-            noRules: rules.isEmpty,
-            onShare: { [weak self] in self?.reshare(result.text) },
+            state: state,
+            onShare: { [weak self] text in self?.reshare(text) },
             onDone: { [weak self] in self?.finish() }
         )
         let host = UIHostingController(rootView: view)
@@ -60,4 +81,13 @@ final class ShareViewController: UIViewController {
         }
         return nil
     }
+}
+
+/// Set from the resolver's callback, which runs off the main actor.
+final class FetchFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+
+    func set() { lock.withLock { flag = true } }
+    var value: Bool { lock.withLock { flag } }
 }
