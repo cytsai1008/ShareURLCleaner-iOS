@@ -6,6 +6,8 @@
     {
       "layers" : [
         {
+          "fill" : "automatic",
+          "glass" : false,
           "image-name" : "link.svg",
           "name" : "link",
           "position" : {
