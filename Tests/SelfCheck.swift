@@ -121,6 +121,7 @@ check(parsed == [
     FilterRule(domains: ["www.bilibili.com"], param: "mid"),
     FilterRule(domains: ["shopee.*"], param: "af_siteid"),
     global("trk"),
+    global("/^utm_/"),
 ], "adguard parse: domain= lists, ~exclusions, scheme patterns, tld wildcard, late removeparam")
 
 // MARK: - RedirectResolver
@@ -179,5 +180,21 @@ check(!RedirectResolver.appliesTo(.selected, domains: ["e.com"], url: "https://f
       "selected skips unlisted host")
 check(RedirectResolver.forMode(.off, domains: ["e.com"]) == nil, "off yields no resolver")
 check(RedirectResolver.forMode(.selected, domains: []) == nil, "selected with no domains yields none")
+
+// Regex $removeparam: matched against name=value; escaped `,` / `$` and a bare end anchor.
+check(FilterParser.parseLine("||example.com^$removeparam=/^utm_/") == FilterRule(domains: ["example.com"], param: "/^utm_/"),
+      "regex param parses")
+check(FilterParser.parseLine("$removeparam=/^__s=[A-Za-z0-9]{6\\,}/,domain=~univis.uni-erlangen.de")
+      == FilterRule(domains: nil, param: "/^__s=[A-Za-z0-9]{6,}/"), "escaped comma in regex")
+check(FilterParser.parseLine("||blue-tomato.com^$removeparam=/^.*_(\\$)ja.*$/")
+      == FilterRule(domains: ["blue-tomato.com"], param: "/^.*_($)ja.*$/"), "bare $ anchor in regex")
+check(FilterParser.parseLine("||example.com^$removeparam=/(unclosed/") == nil, "uncompilable regex skipped")
+check(FilterParser.parseLine("||example.com^$removeparam=/^utm_/g") == nil, "unknown regex flag skipped")
+let rx = [FilterRule(domains: nil, param: "/^utm_/"), FilterRule(domains: nil, param: "/^id=AB/i")]
+check(UrlCleaner.clean("https://a.com/?utm_source=x&id=xy", rules: rx) == "https://a.com/?id=xy", "regex keeps non-match")
+check(UrlCleaner.clean("https://a.com/?id=ab12", rules: rx) == "https://a.com/", "regex /i matches value")
+let ig = [FilterRule(domains: ["instagram.com"], param: "/^[a-z]{4}=[A-Za-z0-9+\\/=]{12,}$/")]
+check(UrlCleaner.clean("https://www.instagram.com/p/X/?qzvk=dGVzdHRva2VuMTIz&img_index=2", rules: ig)
+      == "https://www.instagram.com/p/X/?img_index=2", "random-name token stripped")
 
 print("OK: all self-checks passed")

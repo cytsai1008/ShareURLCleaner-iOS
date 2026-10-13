@@ -2,7 +2,7 @@ import Foundation
 
 /// Strips tracking query parameters from a URL according to the filter rules.
 /// Port of `UrlCleaner.kt`. Only touches http/https URLs; anything else is returned untouched.
-enum UrlCleaner {
+nonisolated enum UrlCleaner {
 
     static func clean(_ rawUrl: String, rules: [FilterRule]) -> String {
         guard var components = URLComponents(string: rawUrl),
@@ -11,19 +11,21 @@ enum UrlCleaner {
         else { return rawUrl }
 
         var paramsToRemove = Set<String>()
-        for rule in rules {
-            guard let domains = rule.domains else {
-                paramsToRemove.insert(rule.param.lowercased())
-                continue
-            }
-            if domains.contains(where: { hostMatches(host, $0) }) {
+        var patternsToRemove = [NSRegularExpression]()
+        for rule in rules where rule.domains?.contains(where: { hostMatches(host, $0) }) ?? true {
+            if let regex = rule.regex { patternsToRemove.append(regex) } else {
                 paramsToRemove.insert(rule.param.lowercased())
             }
         }
-        if paramsToRemove.isEmpty { return rawUrl }
+        if paramsToRemove.isEmpty && patternsToRemove.isEmpty { return rawUrl }
 
         guard let items = components.queryItems, !items.isEmpty else { return rawUrl }
-        let kept = items.filter { !paramsToRemove.contains($0.name.lowercased()) }
+        let kept = items.filter { item in
+            if paramsToRemove.contains(item.name.lowercased()) { return false }
+            let pair = "\(item.name)=\(item.value ?? "")"
+            let range = NSRange(pair.startIndex..., in: pair)
+            return !patternsToRemove.contains { $0.firstMatch(in: pair, range: range) != nil }
+        }
         if kept.count == items.count { return rawUrl }
 
         components.queryItems = kept.isEmpty ? nil : kept

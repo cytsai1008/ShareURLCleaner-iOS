@@ -21,20 +21,21 @@ enum FilterParser {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty || trimmed.hasPrefix("!") || trimmed.hasPrefix("@@") { return nil }
 
-        guard let optionsStart = trimmed.lastIndex(of: "$") else { return nil }
+        guard let optionsStart = optionsStart(in: trimmed) else { return nil }
         let pattern = String(trimmed[..<optionsStart])
-        let options = trimmed[trimmed.index(after: optionsStart)...]
-            .split(separator: ",", omittingEmptySubsequences: false)
-            .map(String.init)
+        let options = splitUnescapedCommas(trimmed[trimmed.index(after: optionsStart)...])
 
         guard let paramOption = options.first(where: {
             $0 == "removeparam" || $0.hasPrefix("removeparam=")
         }) else { return nil }
         let param = paramOption.drop(while: { $0 != "=" }).dropFirst()
             .trimmingCharacters(in: .whitespaces)
-        // Bare `$removeparam` (strip everything), regex params and inverted params are all out
-        // of scope — better to skip than to guess.
-        if param.isEmpty || param.hasPrefix("/") || param.hasPrefix("~") { return nil }
+            .replacingOccurrences(of: "\\,", with: ",")
+            .replacingOccurrences(of: "\\$", with: "$")
+        // Bare `$removeparam` (strip everything) and inverted params are out of scope — better
+        // to skip than to guess. So is a regex ICU can't compile.
+        if param.isEmpty || param.hasPrefix("~") { return nil }
+        if param.hasPrefix("/") && FilterRule(domains: nil, param: param).regex == nil { return nil }
 
         if let domainOption = options.first(where: { $0.hasPrefix("domain=") }) {
             let domains = domainOption.dropFirst("domain=".count)
@@ -56,6 +57,31 @@ enum FilterParser {
         if !pattern.isEmpty { return nil }
 
         return FilterRule(domains: nil, param: param)
+    }
+
+    /// The options `$` is the last unescaped one followed by an option name — a regex's own end
+    /// anchor (`.*$/`) is followed by `/` or `)` instead. Regex values escape `$` as `\$`.
+    private static func optionsStart(in line: String) -> String.Index? {
+        line.indices.last { i in
+            line[i] == "$" && (i == line.startIndex || line[line.index(before: i)] != "\\")
+                && isOptionStart(line, i)
+        }
+    }
+
+    private static func isOptionStart(_ line: String, _ i: String.Index) -> Bool {
+        let next = line.index(after: i)
+        return next < line.endIndex && (line[next] == "~" || ("a"..."z").contains(line[next]))
+    }
+
+    /// Regex values escape `,` as `\,` so it doesn't end the option.
+    private static func splitUnescapedCommas(_ s: Substring) -> [String] {
+        var parts = [""]
+        var prev: Character?
+        for c in s {
+            if c == ",", prev != "\\" { parts.append("") } else { parts[parts.count - 1].append(c) }
+            prev = c
+        }
+        return parts
     }
 
     /// The host a rule pattern is anchored to, or nil when it matches any host.

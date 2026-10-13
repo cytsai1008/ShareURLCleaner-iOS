@@ -84,7 +84,7 @@ final class ShareViewController: UIViewController {
 }
 
 /// Set from the resolver's callback, which runs off the main actor.
-final class FetchFlag: @unchecked Sendable {
+nonisolated final class FetchFlag: @unchecked Sendable {
     private let lock = NSLock()
     private var flag = false
 

@@ -13,7 +13,7 @@ import Foundation
 /// followed, and stops once a destination neither redirects nor hands off.
 ///
 /// Port of `RedirectResolver.kt`.
-enum RedirectResolver {
+nonisolated enum RedirectResolver {
 
     /// Whether to follow redirects to the real destination before cleaning.
     enum Mode: String, CaseIterable, Sendable {
